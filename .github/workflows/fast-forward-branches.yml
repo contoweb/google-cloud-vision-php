@@ -1,0 +1,49 @@
+name: Fast-Forward Environment Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Forward from branch
+        type: choice
+        default: development
+        options: &branches [development, staging, master]
+      target_branch:
+        description: Branch to forward
+        type: choice
+        # If this project has no staging environment, change the default below to "master".
+        default: master
+        options: *branches
+
+permissions: {}
+
+jobs:
+  fast-forward:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fast-forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SOURCE: ${{ inputs.source_branch }}
+          TARGET: ${{ inputs.target_branch }}
+        run: |
+          set -euo pipefail
+
+          [ "$SOURCE" != "$TARGET" ] || { echo "Source and target must differ."; exit 1; }
+
+          src_sha=$(gh api "repos/$REPO/git/ref/heads/$SOURCE" --jq .object.sha)
+          tgt_sha=$(gh api "repos/$REPO/git/ref/heads/$TARGET" --jq .object.sha)
+
+          if [ "$src_sha" = "$tgt_sha" ]; then
+            echo "$TARGET is already up to date with $SOURCE."
+            exit 0
+          fi
+
+          # force=false: only a fast-forward is allowed, otherwise GitHub returns 422
+          gh api -X PATCH "repos/$REPO/git/refs/heads/$TARGET" \
+            -f sha="$src_sha" -F force=false
+
+          echo "$TARGET: ${tgt_sha:0:7} -> ${src_sha:0:7}"
